@@ -1,21 +1,37 @@
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import User from "@/models/User";
+import { connectDB } from "@/lib/db";
 
-export default async function POST(req : Request) {
-    try {
-        
-        const {email, password} = await req.json();
-        
-        const cookieStore = await cookies();
+export async function POST(req: NextRequest) {
+  try {
+    await connectDB();
+    const { email, password } = await req.json();
 
-        const accessToken = await cookieStore.get("accessToken")
+    const user = await User.findOne({ email });
+    if (!user) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET!, 
+      { expiresIn: "1d" }
+    );
 
-
-
-
-    } catch (error) {
-        
-    }
+    const response = NextResponse.json({ message: "Login successful" });
     
+    response.cookies.set("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 86400, 
+      path: "/",
+    });
+
+    return response;
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
